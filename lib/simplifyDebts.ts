@@ -189,7 +189,10 @@ export function calculateDirectDebts(
   // Settlements: fromUser paid toUser, reducing debt fromUser -> toUser (or increasing reverse)
   for (const set of settlements) {
     if (set.fromUserId === set.toUserId || set.amount <= 0.005) continue;
-    addDirect(set.toUserId, set.fromUserId, -set.amount);
+    // (addDirect ignores non-positive amounts, so adjust the map directly)
+    if (!pairwise.has(set.fromUserId)) pairwise.set(set.fromUserId, new Map());
+    const fm = pairwise.get(set.fromUserId)!;
+    fm.set(set.toUserId, (fm.get(set.toUserId) ?? 0) - set.amount);
   }
 
   // Net out bilateral pairs: if A owes B €50 and B owes A €20, net is A owes B €30

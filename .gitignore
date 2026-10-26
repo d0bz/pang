@@ -43,3 +43,6 @@ cookies.txt
 *.db
 *.db-journal
 backups/
+
+# tests
+/tests/*.db
