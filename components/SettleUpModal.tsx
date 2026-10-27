@@ -3,18 +3,15 @@
 import React, { useState, useEffect } from 'react';
 import { X, ArrowRight, CheckCircle2, AlertCircle, Pencil, Trash2 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-
-interface UserItem {
-  id: string;
-  name: string;
-  avatarUrl?: string | null;
-}
-
-interface GroupItem {
-  id: string;
-  name: string;
-  members: Array<{ id: string; name: string }>;
-}
+import {
+  SettleUserItem,
+  SettleGroupItem,
+  SettleDebtItem,
+  SettleFriendItem,
+  getPayerOptions,
+  getOwedMapAndReceivers,
+  resolveInitialSettleUpState,
+} from '@/lib/settleUp';
 
 export interface SettlementItem {
   id: string;
@@ -30,13 +27,15 @@ export interface SettlementItem {
 interface SettleUpModalProps {
   isOpen: boolean;
   onClose: () => void;
-  users: UserItem[];
-  groups: GroupItem[];
+  users: SettleUserItem[];
+  groups: SettleGroupItem[];
   defaultGroupId?: string | null;
   defaultFromUserId?: string;
   defaultToUserId?: string;
   defaultAmount?: number;
   currentUserId: string;
+  currentGroupDebts?: { simplified: SettleDebtItem[]; direct?: SettleDebtItem[] } | null;
+  friends?: SettleFriendItem[];
   onSettlementAdded: () => void;
   settlementToEdit?: SettlementItem | null;
   onDeleteSettlement?: (settlementId: string) => Promise<void> | void;
@@ -52,6 +51,8 @@ export function SettleUpModal({
   defaultToUserId,
   defaultAmount,
   currentUserId,
+  currentGroupDebts,
+  friends,
   onSettlementAdded,
   settlementToEdit,
   onDeleteSettlement,
@@ -68,6 +69,7 @@ export function SettleUpModal({
 
   useEffect(() => {
     if (!isOpen) return;
+    setError(null);
 
     if (settlementToEdit) {
       setFromUserId(settlementToEdit.fromUserId);
@@ -82,16 +84,21 @@ export function SettleUpModal({
           : new Date().toISOString().split('T')[0]
       );
     } else {
-      const from = defaultFromUserId || currentUserId;
-      setFromUserId(from);
-      let to = defaultToUserId || '';
-      if (!to && users.length > 0) {
-        const otherUser = users.find((u) => u.id !== from);
-        if (otherUser) to = otherUser.id;
-      }
-      setToUserId(to);
-      setAmount(defaultAmount ? defaultAmount.toFixed(2) : '');
-      setGroupId(defaultGroupId || '');
+      const init = resolveInitialSettleUpState({
+        currentUserId,
+        defaultFromUserId,
+        defaultToUserId,
+        defaultAmount,
+        defaultGroupId,
+        users,
+        groups,
+        currentGroupDebts,
+        friends,
+      });
+      setFromUserId(init.fromUserId);
+      setToUserId(init.toUserId);
+      setAmount(init.amount);
+      setGroupId(init.groupId);
       setPaymentMethod('Cash');
       setNotes('');
       setDate(new Date().toISOString().split('T')[0]);
@@ -105,9 +112,59 @@ export function SettleUpModal({
     defaultGroupId,
     currentUserId,
     users,
+    groups,
+    currentGroupDebts,
+    friends,
   ]);
 
   if (!isOpen) return null;
+
+  const payerOptions = getPayerOptions(users, fromUserId);
+  const { owedMap, receiverOptions } = getOwedMapAndReceivers({
+    payerId: fromUserId,
+    groupId,
+    users,
+    groups,
+    defaultGroupId,
+    currentGroupDebts,
+    friends,
+    currentUserId,
+    explicitToUserId: settlementToEdit?.toUserId || defaultToUserId,
+  });
+
+  const handleReceiverChange = (nextToId: string) => {
+    setToUserId(nextToId);
+    const owed = owedMap.get(nextToId);
+    if (owed !== undefined && owed > 0) {
+      setAmount(owed.toFixed(2));
+    } else if (!settlementToEdit) {
+      setAmount('');
+    }
+  };
+
+  const handleGroupChange = (nextGroupId: string) => {
+    setGroupId(nextGroupId);
+    const next = getOwedMapAndReceivers({
+      payerId: fromUserId,
+      groupId: nextGroupId,
+      users,
+      groups,
+      defaultGroupId,
+      currentGroupDebts,
+      friends,
+      currentUserId,
+    });
+    const nextToId = next.receiverOptions.some((u) => u.id === toUserId)
+      ? toUserId
+      : next.receiverOptions[0]?.id || '';
+    setToUserId(nextToId);
+    const owed = nextToId ? next.owedMap.get(nextToId) : undefined;
+    if (owed !== undefined && owed > 0) {
+      setAmount(owed.toFixed(2));
+    } else if (!settlementToEdit) {
+      setAmount('');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -169,9 +226,6 @@ export function SettleUpModal({
     }
   };
 
-  const fromUser = users.find((u) => u.id === fromUserId);
-  const toUser = users.find((u) => u.id === toUserId);
-
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4 animate-in fade-in duration-150">
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-w-md w-full border border-gray-100 overflow-hidden max-h-[92vh] flex flex-col my-0 sm:my-8 animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 duration-200">
@@ -206,7 +260,7 @@ export function SettleUpModal({
 
           {/* From & To Selector Graphic */}
           <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-center justify-between gap-3">
-            {/* Sender */}
+            {/* Sender (Only payer shown; no other participants) */}
             <div className="flex-1 text-center">
               <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">
                 Payer (Gives)
@@ -216,7 +270,7 @@ export function SettleUpModal({
                 onChange={(e) => setFromUserId(e.target.value)}
                 className="w-full text-xs font-bold text-gray-800 bg-white border border-gray-300 rounded-lg px-2 py-1.5 outline-none focus:ring-1 focus:ring-splitwise-teal"
               >
-                {users.map((u) => (
+                {payerOptions.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.name} {u.id === currentUserId ? '(You)' : ''}
                   </option>
@@ -235,10 +289,10 @@ export function SettleUpModal({
               </label>
               <select
                 value={toUserId}
-                onChange={(e) => setToUserId(e.target.value)}
+                onChange={(e) => handleReceiverChange(e.target.value)}
                 className="w-full text-xs font-bold text-gray-800 bg-white border border-gray-300 rounded-lg px-2 py-1.5 outline-none focus:ring-1 focus:ring-splitwise-teal"
               >
-                {users.map((u) => (
+                {receiverOptions.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.name} {u.id === currentUserId ? '(You)' : ''}
                   </option>
@@ -277,7 +331,7 @@ export function SettleUpModal({
             </label>
             <select
               value={groupId}
-              onChange={(e) => setGroupId(e.target.value)}
+              onChange={(e) => handleGroupChange(e.target.value)}
               className="w-full text-xs bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-gray-800 outline-none focus:ring-1 focus:ring-splitwise-teal"
             >
               <option value="">No specific group (Direct settlement)</option>

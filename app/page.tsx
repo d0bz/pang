@@ -588,6 +588,8 @@ export default function Home() {
         defaultToUserId={settleUpDefaults.toUserId}
         defaultAmount={settleUpDefaults.amount}
         currentUserId={currentUser?.id}
+        currentGroupDebts={currentGroupData?.debts}
+        friends={dashboardData?.friends}
         settlementToEdit={editingSettlement}
         onDeleteSettlement={handleDeleteSettlement}
         onSettlementAdded={() => {

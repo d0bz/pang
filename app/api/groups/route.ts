@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
-import { calculateNetBalances } from '@/lib/simplifyDebts';
+import { calculateNetBalances, simplifyDebts, calculateDirectDebts } from '@/lib/simplifyDebts';
 import { sendGroupInvitationEmail } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
@@ -46,6 +46,8 @@ export async function GET(req: NextRequest) {
       const usersLookup = g.members.map((m) => m.user);
       const netBalances = calculateNetBalances(usersLookup, g.expenses, g.settlements);
       const userBalance = netBalances.get(user.id) ?? 0;
+      const simplified = simplifyDebts(usersLookup, g.expenses, g.settlements);
+      const direct = calculateDirectDebts(usersLookup, g.expenses, g.settlements);
 
       const totalExpenses = g.expenses.reduce((sum, e) => sum + e.amount, 0);
 
@@ -65,6 +67,10 @@ export async function GET(req: NextRequest) {
         })),
         userBalance,
         totalExpenses,
+        debts: {
+          simplified,
+          direct,
+        },
         updatedAt: g.updatedAt,
       };
     });

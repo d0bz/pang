@@ -37,7 +37,7 @@ interface DashboardViewProps {
   }>;
   currentUserId: string;
   onOpenAddExpense: () => void;
-  onOpenSettleUp: (targetUserId?: string) => void;
+  onOpenSettleUp: (fromUserId?: string, toUserId?: string, amount?: number) => void;
   onSelectGroup: (groupId: string) => void;
   onEditExpense?: (expense: any) => void;
   onDeleteExpense?: (expenseId: string) => void;
@@ -231,7 +231,7 @@ export function DashboardView({
                   </div>
 
                   <button
-                    onClick={() => onOpenSettleUp(friend.id)}
+                    onClick={() => onOpenSettleUp(currentUserId, friend.id, Math.abs(friend.balance))}
                     className="text-xs font-bold text-splitwise-teal hover:text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200/60 px-3 py-1.5 rounded-lg transition active:scale-95"
                   >
                     Settle up
@@ -287,7 +287,7 @@ export function DashboardView({
                   </div>
 
                   <button
-                    onClick={() => onOpenSettleUp(friend.id)}
+                    onClick={() => onOpenSettleUp(friend.id, currentUserId, friend.balance)}
                     className="text-xs font-bold text-splitwise-teal hover:text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200/60 px-3 py-1.5 rounded-lg transition active:scale-95"
                   >
                     Settle up
